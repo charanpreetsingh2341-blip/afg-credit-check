@@ -1,0 +1,9 @@
+{
+  "name": "afg-credit-check",
+  "version": "1.0.0",
+  "description": "All Finance Group Credit Check Form",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.0",
+    "stripe": "^15.0.0"
+  }
+}

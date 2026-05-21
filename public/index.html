@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Credit Check Application | All Finance Group</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(160deg, #0b2e4e 0%, #01578c 100%); min-height: 100vh; padding: 32px 16px; }
+    input, select { font-family: inherit; }
+    .card { background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.2); padding: 28px; max-width: 560px; width: 100%; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 24px; }
+    .header-badge { display: inline-flex; align-items: center; gap: 10px; background: rgba(255,255,255,.1); border-radius: 14px; padding: 10px 20px; margin-bottom: 12px; }
+    .header h1 { color: #fff; font-size: 26px; font-weight: 800; }
+    .header p { color: rgba(41,216,219,.8); font-size: 13px; margin-top: 4px; }
+    .footer-text { text-align: center; color: rgba(41,216,219,.7); font-size: 12px; margin-top: 16px; }
+    .field-label { display: block; font-size: 11px; font-weight: 700; color: #7a7a7a; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .05em; }
+    .field-label span { color: #ef4444; }
+    .field-input { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; color: #4a4a4a; transition: border-color .2s; }
+    .field-input:focus { border-color: #29d8db; }
+    .btn-primary { background: #29d8db; color: #fff; border: none; border-radius: 10px; padding: 12px 28px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all .2s; box-shadow: 0 4px 14px rgba(41,216,219,.4); }
+    .btn-primary:hover { background: #20b8bb; }
+    .btn-primary:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; box-shadow: none; }
+    .btn-primary.green { background: #22c55e; box-shadow: 0 4px 14px rgba(34,197,94,.4); }
+    .btn-primary.green:hover { background: #16a34a; }
+    .btn-outline { background: #fff; color: #4a4a4a; border: 2px solid #e5e7eb; border-radius: 10px; padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-outline:hover { background: #f9f9f9; }
+    .section-box { background: #f6f9f9; border-radius: 14px; padding: 16px; border: 1.5px solid #e5e7eb; margin-bottom: 16px; }
+    .applicant-num { width: 24px; height: 24px; border-radius: 50%; background: #29d8db; color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-right: 8px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .signature-box { border-radius: 12px; border: 1.5px solid #e5e7eb; overflow: hidden; }
+    .signature-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #f6f9f9; border-bottom: 1px solid #e5e7eb; }
+    .signature-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #f6f9f9; border-top: 1px solid #e5e7eb; }
+    .file-upload { cursor: pointer; border-radius: 12px; border: 2px dashed #d1d5db; padding: 16px; text-align: center; transition: all .2s; background: #f6f9f9; }
+    .file-upload:hover { border-color: #29d8db; background: #f0fbfb; }
+    .file-upload.done { border-color: #22c55e; background: #f0fdf4; }
+    .privacy-scroll { background: #f6f9f9; border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 14px; max-height: 160px; overflow-y: auto; font-size: 12px; color: #4a4a4a; line-height: 1.6; margin-bottom: 20px; }
+    .fee-pill { background: rgba(41,216,219,.12); border: 1.5px solid rgba(41,216,219,.4); border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; align-items: center; }
+    .tag-green { color: #16a34a; font-weight: 700; }
+    .tag-amber { color: #d97706; font-weight: 700; }
+    .tag-blue { color: #01578c; font-weight: 800; font-family: monospace; font-size: 18px; }
+    #stripe-card-element { border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fff; }
+    .stripe-error { color: #ef4444; font-size: 13px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // ── REPLACE THIS WITH YOUR STRIPE PUBLISHABLE KEY ──
+    const STRIPE_PK = "pk_live_REPLACE_WITH_YOUR_KEY";
+    const PRICE_PER = 55;
+
+    const PRIVACY = [
+      "We are collecting personal and financial information about you to provide you with our broking services.",
+      "1. The information you provide will be held by us and Finsure Finance and Insurance (Australian Credit Licence 384704).",
+      "2. You appoint us your agent to obtain your credit information from a credit reporting body on your behalf.",
+      "3. We may use credit information and any other information you provide to arrange or provide finance and other services.",
+      "4. We may exchange your information with: persons who provide finance or products to you; financial consultants, accountants, lawyers; any industry body, tribunal or court; persons required by law; associates, related entities or contractors; referees such as your employer; persons acquiring interest in our business; identity verification organisations.",
+      "5. You may gain access to the personal information that we hold about you by contacting us. A copy of our privacy policy can be obtained at www.finsure.com.au or on (02) 9248 6900.",
+    ];
+    const DECLARATIONS = [
+      "All information in this application has been recorded correctly.",
+      "I have been provided with a Credit Guide.",
+      "I agree that my personal information may be collected and used as specified in the Privacy Disclosure Statement.",
+      "I acknowledge that I have been informed about my risk insurance options.",
+    ];
+    const STEPS = ["Applicants","Payment","Upload ID","Sign & Agree","Complete"];
+
+    // ── Progress Bar ──────────────────────────────────────────
+    function Progress({ current }) {
+      return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",marginBottom:32,padding:"0 4px"}}>
+          {STEPS.map((label, i) => (
+            <div key={i} style={{display:"flex",alignItems:"center"}}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                <div style={{
+                  width:36,height:36,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:13,fontWeight:700,border:"2px solid",transition:"all .3s",
+                  background: i+1<current?"#22c55e":i+1===current?"#29d8db":"#f3f4f6",
+                  borderColor: i+1<current?"#22c55e":i+1===current?"#29d8db":"#e5e7eb",
+                  color: i+1<=current?"#fff":"#9ca3af",
+                  boxShadow: i+1===current?"0 0 0 4px rgba(41,216,219,.25)":"none",
+                }}>{i+1<current?"✓":i+1}</div>
+                <span style={{fontSize:10,marginTop:4,fontWeight:600,
+                  color:i+1<current?"#22c55e":i+1===current?"#01578c":"#9ca3af",
+                  display:"block",textAlign:"center",maxWidth:56,
+                }}>{label}</span>
+              </div>
+              {i<STEPS.length-1&&<div style={{width:16,height:2,margin:"0 3px",marginBottom:20,background:i+1<current?"#22c55e":"#e5e7eb"}}/>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── Signature Pad ─────────────────────────────────────────
+    function SigPad({ name, onSave }) {
+      const ref = useRef(null);
+      const drawing = useRef(false);
+      const last = useRef(null);
+      const [strokes, setStrokes] = useState(false);
+      const [saved, setSaved] = useState(false);
+
+      useEffect(() => {
+        const setSize = () => { const c=ref.current; if(c){c.width=c.clientWidth;c.height=150;} };
+        setTimeout(setSize, 80);
+        window.addEventListener("resize", setSize);
+        return () => window.removeEventListener("resize", setSize);
+      }, []);
+
+      const pt = (e) => {
+        const c=ref.current; const r=c.getBoundingClientRect();
+        const s=e.touches?e.touches[0]:e;
+        return {x:s.clientX-r.left,y:s.clientY-r.top};
+      };
+      const start = (e) => { e.preventDefault(); drawing.current=true; last.current=pt(e); setStrokes(true); setSaved(false); onSave(null); };
+      const move = (e) => {
+        if(!drawing.current) return; e.preventDefault();
+        const c=ref.current; const ctx=c.getContext("2d"); const p=pt(e);
+        ctx.strokeStyle="#0b2e4e"; ctx.lineWidth=2.5; ctx.lineCap="round"; ctx.lineJoin="round";
+        ctx.beginPath(); ctx.moveTo(last.current.x,last.current.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+        last.current=p;
+      };
+      const end = (e) => { if(e) e.preventDefault(); drawing.current=false; };
+      const clear = () => {
+        const c=ref.current; c.getContext("2d").clearRect(0,0,c.width,c.height);
+        setStrokes(false); setSaved(false); onSave(null);
+      };
+      const save = () => { if(!strokes) return; onSave(ref.current.toDataURL()); setSaved(true); };
+
+      return (
+        <div className="signature-box">
+          <div className="signature-header">
+            <span style={{fontSize:13,fontWeight:700,color:"#0b2e4e"}}>{name}</span>
+            <button onClick={clear} style={{fontSize:12,color:"#ef4444",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>Clear</button>
+          </div>
+          <canvas ref={ref} style={{width:"100%",height:150,display:"block",touchAction:"none",cursor:"crosshair",background:"#fff"}}
+            onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+            onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
+          <div className="signature-footer">
+            <p style={{fontSize:11,color:"#9ca3af",fontStyle:"italic"}}>Draw with mouse or finger</p>
+            <button onClick={save} disabled={!strokes} style={{
+              fontSize:13,padding:"6px 18px",borderRadius:8,fontWeight:700,border:"none",
+              cursor:strokes?"pointer":"not-allowed",
+              background:saved?"#22c55e":strokes?"#29d8db":"#e5e7eb",
+              color:strokes?"#fff":"#9ca3af",transition:"all .2s"
+            }}>{saved?"✓ Saved":"Save Signature"}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── File Upload ───────────────────────────────────────────
+    function FileBox({ label, icon, file, onFile }) {
+      const ref = useRef(null);
+      const handle = (e) => {
+        const f=e.target.files[0]; if(!f) return;
+        const reader=new FileReader();
+        reader.onload=(ev)=>onFile({name:f.name,url:ev.target.result,type:f.type});
+        reader.readAsDataURL(f);
+      };
+      return (
+        <div className={`file-upload${file?" done":""}`} onClick={()=>ref.current?.click()}>
+          <input ref={ref} type="file" accept="image/*" capture="environment" onChange={handle} style={{display:"none"}} />
+          {file
+            ? <><img src={file.url} alt="" style={{maxHeight:90,margin:"0 auto 8px",borderRadius:8,display:"block",objectFit:"cover",boxShadow:"0 2px 8px #0002"}}/><p style={{fontSize:12,fontWeight:700,color:"#16a34a",margin:0}}>✓ Uploaded</p></>
+            : <><div style={{fontSize:36,marginBottom:4}}>{icon}</div><p style={{fontSize:13,fontWeight:700,color:"#4a4a4a",margin:0}}>{label}</p><p style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Tap to take photo or upload</p></>
+          }
+        </div>
+      );
+    }
+
+    // ── Text Field ────────────────────────────────────────────
+    function Field({ label, value, onChange, placeholder, type="text", required }) {
+      return (
+        <div>
+          <label className="field-label">{label}{required&&<span> *</span>}</label>
+          <input className="field-input" type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} />
+        </div>
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────
+    function App() {
+      const [step, setStep] = useState(1);
+      const nextId = useRef(2);
+      const stripeRef = useRef(null);
+      const elementsRef = useRef(null);
+      const cardElemRef = useRef(null);
+
+      const [apps, setApps] = useState([{id:1,firstName:"",lastName:"",dob:"",phone:"",email:""}]);
+      const [payDone, setPayDone] = useState(false);
+      const [paying, setPaying] = useState(false);
+      const [stripeError, setStripeError] = useState("");
+      const [paymentMethodId, setPaymentMethodId] = useState(null);
+      const [cardLast4, setCardLast4] = useState("");
+      const [licenses, setLicenses] = useState([{front:null,back:null}]);
+      const [sigs, setSigs] = useState([null]);
+      const [agreed, setAgreed] = useState([false]);
+      const [refNum, setRefNum] = useState("");
+      const [submitting, setSubmitting] = useState(false);
+      const [submitError, setSubmitError] = useState("");
+
+      const total = apps.length * PRICE_PER;
+
+      // Mount Stripe card element when on step 2
+      useEffect(() => {
+        if (step !== 2 || payDone) return;
+        try {
+          if (!stripeRef.current) {
+            stripeRef.current = Stripe(STRIPE_PK);
+          }
+          if (!elementsRef.current) {
+            elementsRef.current = stripeRef.current.elements();
+          }
+          if (!cardElemRef.current) {
+            cardElemRef.current = elementsRef.current.create("card", {
+              style: {
+                base: { fontFamily: "Segoe UI, Arial, sans-serif", fontSize: "15px", color: "#4a4a4a", "::placeholder": { color: "#9ca3af" } },
+                invalid: { color: "#ef4444" },
+              },
+              hidePostalCode: true,
+            });
+          }
+          setTimeout(() => {
+            const el = document.getElementById("stripe-card-element");
+            if (el && el.children.length === 0) {
+              cardElemRef.current.mount("#stripe-card-element");
+              cardElemRef.current.on("change", (e) => {
+                setStripeError(e.error ? e.error.message : "");
+              });
+            }
+          }, 100);
+        } catch (e) {
+          console.error("Stripe init error:", e);
+        }
+      }, [step, payDone]);
+
+      const addApp = () => {
+        const id=nextId.current++;
+        setApps(p=>[...p,{id,firstName:"",lastName:"",dob:"",phone:"",email:""}]);
+        setLicenses(p=>[...p,{front:null,back:null}]);
+        setSigs(p=>[...p,null]);
+        setAgreed(p=>[...p,false]);
+      };
+
+      const removeApp = (idx) => {
+        if(apps.length===1) return;
+        setApps(p=>p.filter((_,i)=>i!==idx));
+        setLicenses(p=>p.filter((_,i)=>i!==idx));
+        setSigs(p=>p.filter((_,i)=>i!==idx));
+        setAgreed(p=>p.filter((_,i)=>i!==idx));
+      };
+
+      const updApp = (idx, field, val) => setApps(p=>p.map((a,i)=>i===idx?{...a,[field]:val}:a));
+
+      const stepValid = () => {
+        if(step===1) return apps.every(a=>a.firstName.trim()&&a.lastName.trim()&&a.dob&&a.phone.trim()&&a.email.trim());
+        if(step===2) return payDone;
+        if(step===3) return licenses.every(l=>l.front&&l.back);
+        if(step===4) return sigs.every(s=>s!==null)&&agreed.every(a=>a);
+        return true;
+      };
+
+      const handlePay = async () => {
+        if (!stripeRef.current || !cardElemRef.current) {
+          setStripeError("Stripe not loaded. Please refresh.");
+          return;
+        }
+        setPaying(true);
+        setStripeError("");
+        const {paymentMethod, error} = await stripeRef.current.createPaymentMethod({
+          type: "card",
+          card: cardElemRef.current,
+        });
+        if (error) {
+          setStripeError(error.message);
+          setPaying(false);
+        } else {
+          setPaymentMethodId(paymentMethod.id);
+          setCardLast4(paymentMethod.card.last4);
+          setPayDone(true);
+          setPaying(false);
+        }
+      };
+
+      const handleSubmit = async () => {
+        setSubmitting(true);
+        setSubmitError("");
+        const ref = "CC" + Math.random().toString(36).slice(2,10).toUpperCase();
+        try {
+          const res = await fetch("/.netlify/functions/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ applicants: apps, totalFee: total, paymentMethodId, referenceNumber: ref }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Submission failed");
+          setRefNum(data.referenceNumber || ref);
+          setStep(5);
+        } catch (e) {
+          setSubmitError(e.message || "Something went wrong. Please try again.");
+        }
+        setSubmitting(false);
+      };
+
+      return (
+        <>
+          <div className="header">
+            <div className="header-badge">
+              <span style={{fontSize:28}}>🏠</span>
+              <div style={{textAlign:"left"}}>
+                <p style={{color:"#29d8db",fontSize:11,fontWeight:800,letterSpacing:".15em",textTransform:"uppercase",margin:0}}>All Finance Group</p>
+                <p style={{color:"#fff",fontSize:14,fontWeight:700,margin:0}}>Mortgage Brokers Sydney</p>
+              </div>
+            </div>
+            <h1>Credit Check Application</h1>
+            <p>Secure · Finsure Accredited · ACL 384704</p>
+          </div>
+
+          <div className="card">
+            <Progress current={step} />
+
+            {/* ── STEP 1: APPLICANTS ── */}
+            {step===1&&(
+              <div>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#0b2e4e",marginBottom:4}}>Applicant Details</h2>
+                <p style={{color:"#7a7a7a",fontSize:13,marginBottom:20}}>Each applicant is charged ${PRICE_PER} AUD · All fields required</p>
+                {apps.map((app,idx)=>(
+                  <div key={app.id} className="section-box">
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                      <span style={{fontSize:13,fontWeight:700,color:"#0b2e4e",display:"flex",alignItems:"center"}}>
+                        <span className="applicant-num">{idx+1}</span>
+                        {idx===0?"Primary Applicant":`Applicant ${idx+1}`}
+                      </span>
+                      {idx>0&&<button onClick={()=>removeApp(idx)} style={{fontSize:12,color:"#ef4444",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>✕ Remove</button>}
+                    </div>
+                    <div className="grid-2" style={{marginBottom:10}}>
+                      <Field label="First Name" required value={app.firstName} onChange={v=>updApp(idx,"firstName",v)} placeholder="John" />
+                      <Field label="Last Name" required value={app.lastName} onChange={v=>updApp(idx,"lastName",v)} placeholder="Smith" />
+                    </div>
+                    <div style={{marginBottom:10}}>
+                      <Field label="Date of Birth" required value={app.dob} onChange={v=>updApp(idx,"dob",v)} type="date" />
+                    </div>
+                    <div className="grid-2">
+                      <Field label="Phone Number" required value={app.phone} onChange={v=>updApp(idx,"phone",v)} placeholder="0402 597 375" type="tel" />
+                      <Field label="Email Address" required value={app.email} onChange={v=>updApp(idx,"email",v)} placeholder="john@email.com" type="email" />
+                    </div>
+                  </div>
+                ))}
+                {apps.length>0&&(
+                  <div className="fee-pill">
+                    <span style={{fontSize:13,color:"#0b2e4e"}}>{apps.length} applicant{apps.length>1?"s":""} × ${PRICE_PER}</span>
+                    <span style={{fontSize:18,fontWeight:800,color:"#01578c"}}>Total: ${total} AUD</span>
+                  </div>
+                )}
+                {apps.length<4&&(
+                  <button onClick={addApp} style={{width:"100%",border:"2px dashed #29d8db",borderRadius:12,padding:"12px 0",fontSize:14,fontWeight:700,color:"#01578c",background:"rgba(41,216,219,.08)",cursor:"pointer",marginBottom:4}}>
+                    + Add Another Applicant (+${PRICE_PER})
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ── STEP 2: PAYMENT ── */}
+            {step===2&&(
+              <div>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#0b2e4e",marginBottom:4}}>Credit Check Fee</h2>
+                <p style={{color:"#7a7a7a",fontSize:13,marginBottom:16}}>One-time payment to process your credit check</p>
+                <div style={{background:"#f6f9f9",border:"1.5px solid #e5e7eb",borderRadius:12,padding:14,marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <p style={{fontSize:14,fontWeight:700,color:"#0b2e4e",margin:0}}>Credit Check Service</p>
+                    <p style={{fontSize:12,color:"#7a7a7a",margin:"2px 0 0"}}>{apps.length} applicant{apps.length>1?"s":""} × ${PRICE_PER} AUD</p>
+                  </div>
+                  <div><span style={{fontSize:26,fontWeight:800,color:"#01578c"}}>${total}</span><span style={{fontSize:13,color:"#7a7a7a"}}> AUD</span></div>
+                </div>
+                {payDone?(
+                  <div style={{textAlign:"center",padding:"40px 0"}}>
+                    <div style={{fontSize:56,marginBottom:12}}>✅</div>
+                    <p style={{fontSize:22,fontWeight:800,color:"#16a34a",margin:"0 0 6px"}}>Payment Authorised!</p>
+                    <p style={{fontSize:13,color:"#7a7a7a"}}>Card ending ••••{cardLast4} — Payment will complete on submission</p>
+                  </div>
+                ):(
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{background:"linear-gradient(135deg,#0b2e4e 0%,#01578c 60%,rgba(41,216,219,.6) 100%)",borderRadius:16,padding:"20px 22px",color:"#fff",boxShadow:"0 8px 24px rgba(11,46,78,.5)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:18}}><span style={{fontSize:11,opacity:.6,letterSpacing:".1em",textTransform:"uppercase"}}>Secure Payment</span><span style={{fontWeight:800,fontSize:18,opacity:.85}}>VISA / MC</span></div>
+                      <div style={{fontSize:11,opacity:.6,marginBottom:4}}>Powered by Stripe · 256-bit SSL</div>
+                    </div>
+                    <div>
+                      <label className="field-label">Card Details <span>*</span></label>
+                      <div id="stripe-card-element"></div>
+                      {stripeError&&<p className="stripe-error">{stripeError}</p>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#9ca3af"}}>
+                      <span>🔒</span><span>Your card details are encrypted by Stripe and never stored on our servers</span>
+                    </div>
+                    <button className="btn-primary" onClick={handlePay} disabled={paying} style={{width:"100%",padding:"14px 0",fontSize:15}}>
+                      {paying?"⏳ Authorising...":"Authorise $" + total + ".00 AUD"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── STEP 3: UPLOAD ID ── */}
+            {step===3&&(
+              <div>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#0b2e4e",marginBottom:4}}>Upload Driver's Licence</h2>
+                <p style={{color:"#7a7a7a",fontSize:13,marginBottom:20}}>Upload front and back of each applicant's current Australian driver's licence</p>
+                {apps.map((app,idx)=>(
+                  <div key={app.id} style={{marginBottom:20}}>
+                    <div style={{display:"flex",alignItems:"center",marginBottom:10}}>
+                      <span className="applicant-num" style={{marginRight:8}}>{idx+1}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:"#0b2e4e"}}>{app.firstName} {app.lastName}</span>
+                    </div>
+                    <div className="grid-2">
+                      <FileBox label="Front of Licence" icon="🪪" file={licenses[idx]?.front} onFile={f=>setLicenses(p=>p.map((l,i)=>i===idx?{...l,front:f}:l))} />
+                      <FileBox label="Back of Licence" icon="🔄" file={licenses[idx]?.back} onFile={f=>setLicenses(p=>p.map((l,i)=>i===idx?{...l,back:f}:l))} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── STEP 4: SIGN ── */}
+            {step===4&&(
+              <div>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#0b2e4e",marginBottom:4}}>Privacy Consent & Signature</h2>
+                <p style={{color:"#7a7a7a",fontSize:13,marginBottom:16}}>Please read, agree and sign below</p>
+                <div className="privacy-scroll">
+                  <p style={{fontWeight:800,color:"#0b2e4e",marginBottom:8,fontSize:13}}>Privacy Disclosure Statement and Consent</p>
+                  {PRIVACY.map((p,i)=><p key={i} style={{marginBottom:8}}>{p}</p>)}
+                  <p style={{fontWeight:800,color:"#0b2e4e",marginTop:12,marginBottom:6,fontSize:13}}>Declaration and Acknowledgement</p>
+                  {DECLARATIONS.map((d,i)=><p key={i} style={{marginBottom:4,paddingLeft:12}}>• {d}</p>)}
+                </div>
+                {apps.map((app,idx)=>(
+                  <div key={app.id} className="section-box" style={{marginBottom:16}}>
+                    <label style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:14,cursor:"pointer"}}>
+                      <input type="checkbox" checked={agreed[idx]} onChange={e=>setAgreed(p=>p.map((a,i)=>i===idx?e.target.checked:a))}
+                        style={{width:18,height:18,marginTop:1,cursor:"pointer",accentColor:"#29d8db",flexShrink:0}} />
+                      <span style={{fontSize:13,color:"#4a4a4a",lineHeight:1.4}}>
+                        <strong>{app.firstName} {app.lastName}</strong> — I have read and agree to the Privacy Disclosure Statement and all declarations
+                      </span>
+                    </label>
+                    <SigPad name={`${app.firstName} ${app.lastName} — Signature`} onSave={sig=>setSigs(p=>p.map((s,i)=>i===idx?sig:s))} />
+                    {sigs[idx]&&<p style={{fontSize:12,color:"#16a34a",fontWeight:700,textAlign:"center",marginTop:6}}>✓ Signature saved for {app.firstName}</p>}
+                  </div>
+                ))}
+                {submitError&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:10,padding:12,marginBottom:12,color:"#dc2626",fontSize:13}}>{submitError}</div>}
+              </div>
+            )}
+
+            {/* ── STEP 5: DONE ── */}
+            {step===5&&(
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:64,marginBottom:16}}>🎉</div>
+                <h2 style={{fontSize:24,fontWeight:800,color:"#0b2e4e",marginBottom:8}}>Application Submitted!</h2>
+                <p style={{color:"#7a7a7a",fontSize:14,marginBottom:24}}>Your credit check is now under review. Confirmation emails have been sent.</p>
+                <div style={{background:"#f6f9f9",border:"1.5px solid #e5e7eb",borderRadius:14,padding:20,textAlign:"left",marginBottom:16}}>
+                  <p style={{fontSize:11,fontWeight:800,color:"#7a7a7a",textTransform:"uppercase",letterSpacing:".08em",margin:"0 0 12px"}}>Application Summary</p>
+                  <div className="summary-row"><span style={{color:"#7a7a7a"}}>Reference</span><span className="tag-blue">{refNum}</span></div>
+                  <div className="summary-row"><span style={{color:"#7a7a7a"}}>Applicant(s)</span><span style={{fontSize:13,textAlign:"right",maxWidth:220}}>{apps.map(a=>`${a.firstName} ${a.lastName}`).join(", ")}</span></div>
+                  <div className="summary-row"><span style={{color:"#7a7a7a"}}>Fee Charged</span><span className="tag-green">${total}.00 AUD ✓</span></div>
+                  <div className="summary-row"><span style={{color:"#7a7a7a"}}>ID Documents</span><span>✓ All licences received</span></div>
+                  <div className="summary-row" style={{borderBottom:"none"}}><span style={{color:"#7a7a7a"}}>Status</span><span className="tag-amber">Under Review</span></div>
+                </div>
+                <div style={{background:"#fffbeb",border:"1.5px solid #fde68a",borderRadius:12,padding:16,textAlign:"left",marginBottom:20}}>
+                  <p style={{fontWeight:700,color:"#92400e",margin:"0 0 8px",fontSize:14}}>📧 What Happens Next?</p>
+                  <ul style={{margin:0,paddingLeft:16,fontSize:13,color:"#78350f",lineHeight:1.8}}>
+                    <li>Confirmation email sent to {apps[0]?.email}</li>
+                    <li>Broker notified at vikas@allfinancegroup.com.au</li>
+                    <li>Credit check completed within 1–2 business days</li>
+                    <li>Contact Vikas · <strong>0402 597 375</strong></li>
+                  </ul>
+                </div>
+                <p style={{fontSize:12,color:"#9ca3af",lineHeight:1.6}}>All Finance Group · Sydney NSW<br/>Finsure Finance & Insurance · ACL 384704</p>
+              </div>
+            )}
+
+            {/* ── Navigation ── */}
+            {step<5&&(
+              <div style={{display:"flex",marginTop:24,gap:12,justifyContent:step===1?"flex-end":"space-between"}}>
+                {step>1&&<button className="btn-outline" onClick={()=>setStep(s=>s-1)}>← Back</button>}
+                {step<4
+                  ?<button className="btn-primary" onClick={()=>setStep(s=>s+1)} disabled={!stepValid()}>Continue →</button>
+                  :<button className={`btn-primary${stepValid()?" green":""}`} onClick={handleSubmit} disabled={!stepValid()||submitting}>
+                    {submitting?"⏳ Submitting...":"✓ Submit Application"}
+                  </button>
+                }
+              </div>
+            )}
+          </div>
+
+          <p className="footer-text">🔒 256-bit SSL · Stripe Secured · Finsure Finance & Insurance · ACL 384704</p>
+        </>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
